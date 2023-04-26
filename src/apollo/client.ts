@@ -6,7 +6,7 @@ export const healthClient = new ApolloClient({
 })
 
 export const blockClient = new ApolloClient({
-  uri: 'https://api.thegraph.com/subgraphs/name/blocklytics/ethereum-blocks',
+  uri: 'https://api.goldsky.com/api/public/project_cl7gjtydo00g30hx10fzo6f8z/subgraphs/ethereum-blocks/prod/gn',
   cache: new InMemoryCache(),
   queryDeduplication: true,
   defaultOptions: {
@@ -21,7 +21,7 @@ export const blockClient = new ApolloClient({
 })
 
 export const client = new ApolloClient({
-  uri: 'https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3',
+  uri: 'https://uniswap-eth.goldsky.com',
   cache: new InMemoryCache({
     typePolicies: {
       Token: {
