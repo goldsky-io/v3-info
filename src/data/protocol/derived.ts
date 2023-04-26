@@ -105,6 +105,8 @@ export function useDerivedProtocolTVLHistory() {
       if (!addresses) {
         return
       }
+      const addressData: Record<string, PoolChartEntry[] | undefined> = {}
+      console.log('Fetching all pool data for aggregate TVL', addresses)
       // fetch all data for each pool
       const data = await addresses
         .slice(0, POOL_COUNT_FOR_AGGREGATE) // @TODO: must be replaced with aggregate with subgraph data fixed.
@@ -114,6 +116,7 @@ export function useDerivedProtocolTVLHistory() {
             return accum
           }
           const { data } = await fetchPoolChartData(address, dataClient)
+          addressData[address] = data
           if (!data) return accum
           dispatch(updatePoolChartData({ poolAddress: address, chartData: data, networkId: currentNetwork.id }))
           data.map((poolDayData: PoolChartEntry) => {
@@ -132,6 +135,7 @@ export function useDerivedProtocolTVLHistory() {
           return accum
         }, Promise.resolve({} as { [key: number]: ChartDayData }))
 
+      console.log('addressData', addressData)
       // Format as array
       setChartData({ ...chartData, [currentNetwork.id]: Object.values(data) })
     }
