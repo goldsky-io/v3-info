@@ -1,5 +1,6 @@
 const axios = require('axios')
 const fs = require('fs')
+
 const addresses = [
   '0xa3f558aebaecaf0e11ca4b2199cc5ed341edfd74',
   '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8',
@@ -50,76 +51,53 @@ const addresses = [
 ]
 
 const mintsQuery = `
-query poolDayDatas($startTime: Int!, $idGt: String!, $address: String!, $count: Int!) {
-  poolDayDatas(
-    first: 365
-    where: {pool: $address, date_gt: $startTime}
-    orderBy: date
-    orderDirection: asc
-    subgraphError: allow
-  ) {
-    date
-    pool {
-      mints(orderBy: id, orderDirection: desc, first: $count, where: {id_gt:$idGt}) {
-        id
-        transaction {
-          id
-        }
-      }
+query mints($address: String!, $minTimestamp: Int!, $count: Int!){
+  mints(where: {timestamp_gt: $minTimestamp timestamp_lt: 1662104943 pool: $address } first:$count orderBy: timestamp orderDirection:asc) {
+    timestamp
+    transaction {
+      id
     }
   }
-}`
+}
+`
 
 const burnsQuery = `
-query poolDayDatas($startTime: Int!, $idGt: String!, $address: String!, $count: Int!) {
-  poolDayDatas(
-    first: 365
-    where: {pool: $address, date_gt: $startTime}
-    orderBy: date
-    orderDirection: asc
-    subgraphError: allow
-  ) {
-    date
-    pool {
-       burns(orderBy: id, orderDirection: desc, first: $count, where: {id_gt:$idGt}) {
-        id
-        transaction {
-          id
-        }
-      }
+query burns($address: String!, $minTimestamp: Int!, $count: Int!){
+  burns(where: {timestamp_gt: $minTimestamp timestamp_lt: 1662104943 pool: $address } first:$count orderBy: timestamp orderDirection:asc) {
+    timestamp
+    transaction {
+      id
     }
   }
-}`
+}
+`
 
 const swapsQuery = `
-query poolDayDatas($startTime: Int!, $skip: Int!, $address: String!, $count: Int!) {
-  poolDayDatas(
-    first: 365
-    where: {pool: $address, date_gt: $startTime}
-    orderBy: date
-    orderDirection: asc
-    subgraphError: allow
-  ) {
-    date
-    pool {
-      swaps(orderBy: id, orderDirection: desc, first: $count, skip: $skip) {
-        transaction {
-          id
-        }
-      }
+query swaps($address: String!, $minTimestamp: Int!, $count: Int!){
+  swaps(where: {timestamp_gt: $minTimestamp timestamp_lt: 1662104943 pool: $address } first:$count orderBy: timestamp orderDirection:asc) {
+    timestamp
+    transaction {
+      id
     }
   }
-}`
+}
+`
 
-// const queries = [{query: mintsQuery, key: 'mints'}, {query: burnsQuery, key: 'burns'}, {query: swapsQuery, key: 'swaps'}]
-const queries: { query: string; key: 'mints' | 'swaps' | 'burns' }[] = [{ query: mintsQuery, key: 'mints' }]
+const queries: { query: string; key: 'mints' | 'swaps' | 'burns' }[] = [
+  { query: mintsQuery, key: 'mints' },
+  { query: burnsQuery, key: 'burns' },
+  { query: swapsQuery, key: 'swaps' },
+]
+// const queries: { query: string; key: 'mints' | 'swaps' | 'burns' }[] = [{ query: swapsQuery, key: 'swaps' }]
 
 // open a file for reading and writing (creating it if it doesn't exist)
 const validatedFilePath = './scripts/validated.txt'
+const invalidFilePath = './scripts/invalid.txt'
 const validated = fs.readFileSync(validatedFilePath, 'utf8').split('\n')
+const invalid = fs.readFileSync(invalidFilePath, 'utf8').split('\n')
 
 const countPerQuery = 1000
-const startTime = 1660993048
+const startTime = 1661759343
 const payload = {
   operationName: 'poolDayDatas',
 }
@@ -127,25 +105,22 @@ const payload = {
 const goldskyApi = 'https://api.goldsky.com/api/public/project_cl7gjtydo00g30hx10fzo6f8z/subgraphs/uniswap-v3/1.0.0/gn'
 const graphNodeApi = 'https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3'
 
-type PoolDayData = {
-  date: number
-  pool: {
-    mints: Array<{ transaction: { id: string } }>
-    swaps: Array<{ transaction: { id: string } }>
-    burns: Array<{ transaction: { id: string } }>
-  }
-}
+type TransactionEvents = Array<{ timestamp: string; transaction: { id: string } }>
 
 async function runGraphqlQuery(
   endpoint: string,
   address: string,
   query: string,
-  skip: number
+  minTimestamp: number,
+  count: number
 ): Promise<{
   data: {
     data: {
-      poolDayDatas: Array<PoolDayData>
+      mints: TransactionEvents
+      swaps: TransactionEvents
+      burns: TransactionEvents
     }
+    errors?: Array<{ message: string }>
   }
 }> {
   return await axios.post(
@@ -154,10 +129,9 @@ async function runGraphqlQuery(
       ...payload,
       query,
       variables: {
-        startTime,
-        skip,
+        minTimestamp,
         address,
-        count: countPerQuery,
+        count,
       },
     },
     {
@@ -169,52 +143,22 @@ async function runGraphqlQuery(
   )
 }
 
-type Events = Record<number, { transaction: { id: string } }[]>
-
-function validateEvents(goldskyData: PoolDayData[], thegraphData: PoolDayData[], key: 'mints' | 'burns' | 'swaps') {
-  console.log('validating events')
-  const goldskyDates = new Set(goldskyData.map((data) => data.date))
-  const thegraphDates = new Set(goldskyData.map((data) => data.date))
-
+function validateTransactions(goldskyTransactions: Set<string>, thegraphTransactions: Set<string>) {
   let isValid = true
-
-  for (const date of goldskyDates) {
-    if (!thegraphDates.has(date)) {
-      console.log(`date ${date} missing from thegraph`)
-      isValid = false
-    }
-  }
-  for (const date of thegraphDates) {
-    if (!goldskyDates.has(date)) {
-      console.log(`date ${date} missing from goldsky`)
-      isValid = false
-    }
-  }
-  if (!isValid) {
-    return isValid
-  }
-  console.log('all dates match. checking transactions')
-
   const transactionsMissingFromGoldsky = new Set()
   const transactionsMissingFromThegraph = new Set()
-  for (let i = 0; i < goldskyData.length; i++) {
-    const goldskyPoolData = goldskyData[i].pool[key]
-    const thegraphPoolData = thegraphData[i].pool[key]
-    const goldskyTransactions = new Set(goldskyPoolData?.map((event) => event.transaction.id))
-    const thegraphTransactions = new Set(thegraphPoolData?.map((event) => event.transaction.id))
 
-    for (const transaction of goldskyTransactions) {
-      if (!thegraphTransactions.has(transaction)) {
-        transactionsMissingFromThegraph.add(transaction)
-        isValid = false
-      }
+  for (const transaction of goldskyTransactions) {
+    if (!thegraphTransactions.has(transaction)) {
+      transactionsMissingFromThegraph.add(transaction)
+      isValid = false
     }
+  }
 
-    for (const transaction of thegraphTransactions) {
-      if (!goldskyTransactions.has(transaction)) {
-        transactionsMissingFromGoldsky.add(transaction)
-        isValid = false
-      }
+  for (const transaction of thegraphTransactions) {
+    if (!goldskyTransactions.has(transaction)) {
+      transactionsMissingFromGoldsky.add(transaction)
+      isValid = false
     }
   }
   console.log(`transactions missing from goldsky`, transactionsMissingFromGoldsky)
@@ -223,53 +167,34 @@ function validateEvents(goldskyData: PoolDayData[], thegraphData: PoolDayData[],
   return isValid
 }
 
-async function validateAllEvents(address: string, query: string, key: 'mints' | 'burns' | 'swaps') {
-  let skip = 0
+async function getTransactions(address: string, query: string, key: 'mints' | 'burns' | 'swaps', endpoint: string) {
+  let minTimestamp = startTime
 
+  const transactionIds = new Set<string>()
   while (true) {
     try {
-      const validationKey = `${address}-${key}-${skip}`
-      if (validated.includes(validationKey)) {
-        console.log(`skipping ${validationKey}`)
-        skip += countPerQuery
+      const result = await runGraphqlQuery(endpoint, address, query, minTimestamp, countPerQuery)
+
+      if (result.data.errors) {
+        console.log('encountered error, trying again')
+        console.log(result.data.errors)
         continue
       }
-
-      const [goldskyResult, thegraphResult] = await Promise.all([
-        runGraphqlQuery(goldskyApi, address, query, skip),
-        runGraphqlQuery(graphNodeApi, address, query, skip),
-      ])
-      skip += countPerQuery
-      console.log(`got ${skip} events`)
-      let allDayEventsLessThanCountPerQuery = true
-      let noEvents = true
-      for (const poolDayData of goldskyResult.data.data.poolDayDatas) {
-        if (poolDayData.pool[key].length >= countPerQuery) {
-          allDayEventsLessThanCountPerQuery = false
-        }
-        if (poolDayData.pool[key].length > 0) {
-          noEvents = false
-        }
-      }
-
-      if (noEvents) {
-        console.log('no events found')
+      result.data.data[key].map((event) => {
+        transactionIds.add(event.transaction.id)
+      })
+      if (result.data.data[key].length < countPerQuery) {
         break
       }
 
-      const isValid = validateEvents(goldskyResult.data.data.poolDayDatas, thegraphResult.data.data.poolDayDatas, key)
-      if (isValid) {
-        validated.push(validationKey)
-        fs.writeFileSync(validatedFilePath, validated.join('\n'))
-      }
-      if (allDayEventsLessThanCountPerQuery) {
-        break
-      }
+      minTimestamp = parseInt(result.data.data[key][result.data.data[key].length - 1].timestamp)
     } catch (e) {
       console.log('encountered error, trying again')
       console.log(e)
     }
   }
+
+  return transactionIds
 }
 
 async function main() {
@@ -277,18 +202,28 @@ async function main() {
     console.log(`checking address ${address}`)
     for (const query of queries) {
       console.log(`checking query ${query.key}`)
-      // const key = `${address}-${query.key}`
-      // if (validated.includes(key)) {
-      //   console.log('already validated')
-      //   continue
-      // }
-      await validateAllEvents(address, query.query, query.key)
+      const key = `${address}-${query.key}`
+      if (validated.includes(key)) {
+        console.log('already validated')
+        continue
+      }
+      if (invalid.includes(key)) {
+        console.log('already invalid')
+        continue
+      }
+      const [goldskyTransactions, thegraphTransactions] = await Promise.all([
+        getTransactions(address, query.query, query.key, goldskyApi),
+        getTransactions(address, query.query, query.key, graphNodeApi),
+      ])
+      const isValid = validateTransactions(goldskyTransactions, thegraphTransactions)
 
-      // const isValid = validateEvents(goldskyEvents, thegraphEvents)
-      // if (isValid) {
-      //   validated.push(key)
-      //   fs.writeFileSync(validatedFilePath, validated.join('\n'))
-      // }
+      if (isValid) {
+        validated.push(key)
+        fs.writeFileSync(validatedFilePath, validated.join('\n'))
+      } else {
+        invalid.push(key)
+        fs.writeFileSync(invalidFilePath, invalid.join('\n'))
+      }
     }
     // const results = await Promise.all(promises)
 
