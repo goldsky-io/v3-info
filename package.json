@@ -16,7 +16,7 @@
     "@types/lodash.keyby": "^4.6.6",
     "@types/luxon": "^1.24.4",
     "@types/multicodec": "^1.0.0",
-    "@types/node": "^13.13.5",
+    "@types/node": "^18.16.1",
     "@types/qs": "^6.9.2",
     "@types/react": "^17.0.2",
     "@types/react-dom": "^17.0.1",
@@ -105,7 +105,9 @@
     "storybook": "start-storybook -p 6006",
     "test": "react-scripts test --env=jsdom",
     "codegen:schema": "npx apollo client:download-schema --endpoint=https://api.thegraph.com/subgraphs/name/ianlapham/uniswap-v3-rinkeby",
-    "codegen:generate": "apollo codegen:generate --localSchemaFile=schema.json --target=typescript --includes=src/**/*.ts --tagName=gql --addTypename --globalTypesFile=src/types/graphql-global-types.ts types"
+    "codegen:generate": "apollo codegen:generate --localSchemaFile=schema.json --target=typescript --includes=src/**/*.ts --tagName=gql --addTypename --globalTypesFile=src/types/graphql-global-types.ts types",
+    "prettier:write": "prettier --write ./scripts",
+    "script": "ts-node ./scripts/index.ts"
   },
   "eslintConfig": {
     "extends": "react-app",
@@ -136,6 +138,7 @@
     "apollo-cache-inmemory": "^1.6.6",
     "apollo-client": "^2.6.10",
     "apollo-link-http": "^1.5.17",
+    "axios": "^1.3.6",
     "dayjs": "^1.10.4",
     "graphql": "^15.5.0",
     "graphql-tag": "^2.11.0",
@@ -145,6 +148,7 @@
     "react-hot-keys": "^2.6.2",
     "react-hotkeys": "^2.0.0",
     "recharts": "^2.0.9",
+    "ts-node": "^10.9.1",
     "uifx": "^2.0.7"
   }
 }
